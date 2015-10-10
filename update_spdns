@@ -1,0 +1,62 @@
+#!/bin/sh
+#IP_INET=$(curl "http://www.networksecuritytoolkit.org/nst/cgi-bin/ip.cgi")
+IP_INET=$(curl -s "http://whatismijnip.nl" |cut -d " " -f 5)
+IP_LAST=127.0.0.1
+SPDNS_USER="USER"
+SPDNS_PASS="PASSWORD"
+SPDNS_HOST="HOSTNAME.spdns.org"
+SPDNS_DATA="hostname=${SPDNS_HOST}&myip=${IP_INET}&user=${SPDNS_USER}&pass=${SPDNS_PASS}"
+SPDNS_URL="http://www.spdns.de/nic/update"
+LOG="/var/log/update_spdns.log"
+DATE=$(date)
+MSG=""
+
+GOOD="good ${IP_INET}"
+ABUSE="abuse ${IP_INET}"
+BADAUTH="badauth ${IP_INET}"
+NOHOST="nohost ${IP_INET}"
+NOTFQDN="notfqdn ${IP_INET}"
+NUMHOST="numhost ${IP_INET}"
+NOCHG="nochg ${IP_INET}"
+
+exec 3>> $LOG
+
+if [ -f /tmp/ip_inet ] 
+  then
+    read IP_LAST < /tmp/ip_inet
+fi
+
+if [ $IP_INET != $IP_LAST ]
+  then
+    RES=$(curl --data $SPDNS_DATA $SPDNS_URL)
+    case $RES in
+      $ABUSE)
+	MSG="Der Host kann nicht aktualisiert werden, da er aufgrund vorheriger fehlerhafter Updateversuche gesperrt ist."
+      ;;
+      $BADAUTH)
+	MSG="Ein ungültiger Benutzername und/oder ein ungültiges Kennwort wurde eingegeben."
+      ;;
+      $GOOD)
+	MSG="Die Hostname wurde erfolgreich auf die neue IP (${IP_INET}) aktualisiert."
+	notify-send -i /usr/share/icons/kdeicons-ossigeno2/32x32/status/dialog-warning.png "IP-Änderung" "Die IP-Adresse ist nun ${IP_INET}"
+      ;;
+      $NOHOST)
+	MSG="Der angegebene Host kann nicht unter diesem Benutzer-Account verwendet werden."
+      ;;
+      $NOTFQDN)
+	MSG="Der angegebene Host ist kein FQDN."
+      ;;
+      $NUMHOST)
+	MSG="Es wurde versucht, mehr als 20 Hosts in einer Anfrage zu aktualisieren."
+      ;;
+      $NOCHG)
+	MSG="Die IP hat sich zum letzten Update nicht geändert. Werden innerhalb eines kurzen Zeitraumes weiterhin Updateversuche dieses Hosts vorgenommen, wird dieser für eine bestimmte Zeitspanne keine Updates mehr entgegen nehmen können." >> $LOG
+      ;;
+      *)
+	MSG="UNBEKANNTER ERGEBNIS_CODE ${RES}"
+      ;;
+    esac
+    echo "(${DATE}) $MSG" >&3
+    echo $IP_INET > /tmp/ip_inet
+fi    
+  
